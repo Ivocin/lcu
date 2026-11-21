@@ -290,13 +290,12 @@ export function saveSetupState(home, { chrome, audio, approval = 'ask', pending 
 
 /** PATH plus the user-level directories harness installers use, for a harness installed after login. */
 function harnessSearchPath(home, path = process.env.PATH ?? '') {
-  const extra = ['.local/bin', '.bun/bin', '.npm-global/bin', '.cargo/bin'].map((name) => join(home, name));
+  const extra = ['.local/bin', '.bun/bin', '.npm-global/bin', '.cargo/bin', '.grok/bin'].map((name) => join(home, name));
   return [...new Set([...path.split(delimiter).filter(Boolean), ...extra])].join(delimiter);
 }
 
 export const harnessInstalled = (name, home, path) => Boolean(name === 'dsh' ? dshExecutable(home, harnessSearchPath(home, path))
-  : seams.which(CLIENTS[name].executable, harnessSearchPath(home, path)) ||
-    (name === 'grok' && seams.which('grok', join(home, '.grok/bin'))));
+  : seams.which(CLIENTS[name].executable, harnessSearchPath(home, path)));
 
 // Installers ---------------------------------------------------------------------------------------------
 
@@ -560,7 +559,7 @@ export async function configure(names, home, command, toolsRoot, releaseRoot,
         fail(name, 'plugin', error);
         continue;
       }
-      if (name !== 'grok') applyApproval(name);
+      applyApproval(name);
       continue;
     }
     if (name === 'junie') {
@@ -923,9 +922,8 @@ export function validate(args) {
 const agentScopes = (name) => (USER_ONLY_AGENTS.includes(name) ? 'user' : 'user, project');
 
 function validateAgentScope(names, scope) {
-  if (scope === 'project' && names.includes('grok')) throw new Error('The Grok plugin is user-scoped. Use --scope user.');
   if (scope === 'project' && names.some((name) => USER_ONLY_AGENTS.includes(name))) {
-    throw new Error('Oh My Pi, Hermes and DeepSeek Harness native plugins are profile-scoped, and Junie reads hooks only from ~/.junie/config.json. Use --scope user with the intended profile; project scope is not supported.');
+    throw new Error('Oh My Pi, Hermes, DeepSeek Harness and Grok native plugins are profile-scoped, and Junie reads hooks only from ~/.junie/config.json. Use --scope user with the intended profile; project scope is not supported.');
   }
 }
 
@@ -1221,8 +1219,7 @@ async function registerLocked(args, account, home, names, missing, register, pat
       say('Claude Code: original turn cleanup runs on normal Stop and active MCP-call cancellation. Esc during model wait after a tool completes has no cleanup event and may leave temporary tabs open; Chrome remains experimental.');
     }
   } else say('Native desktop control selected; Chrome connector and guidance are excluded.');
-  if (approvalMode === 'auto' && names.includes('grok')) say('Grok CLI manages its own per-tool approvals.');
-  if (approvalMode === 'auto' && !args.export && names.some(name => name !== 'grok')) {
+  if (approvalMode === 'auto' && !args.export) {
     const entries = { 'claude-code': 'Claude Code: allow `mcp__lcu__js` and `mcp__lcu__js_reset`',
       codex: 'Codex: `approval_mode = "approve"` for the `js` and `js_reset` tools of `[mcp_servers.lcu]`',
       omp: 'Oh My Pi: `tools.approval` `js` and `js_reset` set to `allow`',

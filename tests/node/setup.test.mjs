@@ -121,7 +121,7 @@ test('validation: conflicts, scopes, agents and reconcile', (t) => {
   assert.throws(() => check('--agent', 'nope'), /Unknown agent: nope/);
   assert.throws(() => check('--prefix', 'relative'), /dedicated absolute prefix/);
   assert.deepEqual(check('--agent', 'claude', '--agent', 'claude-code').names, ['claude-code']);
-  assert.deepEqual(check('--agent', 'all').names, Object.keys(setup.CLIENTS));
+  assert.deepEqual(check('--agent', 'all').names, setup.supportedClients());
   assert.throws(() => setup.parse(['--scope', 'x']), setup.UsageError);
   assert.throws(() => setup.parse(['--bogus']), setup.UsageError);
 });
@@ -646,6 +646,18 @@ test('Windows setup leaves out Junie and Antigravity: all and auto skip them, an
   override(t, process, 'platform', 'darwin');
   assert.deepEqual(setup.detect(home).filter((name) => ['junie', 'antigravity'].includes(name)), ['junie', 'antigravity']);
   assert.deepEqual(setup.supportedClients(), Object.keys(setup.CLIENTS));
+});
+
+test('Linux setup leaves out Grok: all skips it, and naming it fails validation', (t) => {
+  const home = temporary(t);
+  override(t, setup.seams, 'account', () => ({ name: 'alice', uid: process.getuid(), gid: process.getgid(), home }));
+  override(t, process, 'platform', 'linux');
+  const check = (...argv) => setup.validate(setup.parse(['--prefix', join(home, 'lcu'), ...argv]));
+  assert.ok(!check('--agent', 'all').names.includes('grok'));
+  assert.ok(!setup.supportedClients().includes('grok'));
+  assert.throws(() => check('--agent', 'grok'), /Grok CLI cannot be set up on Linux yet/);
+  override(t, process, 'platform', 'darwin');
+  assert.ok(check('--agent', 'all').names.includes('grok'));
 });
 
 test('Windows registrations name the stable lcu.cmd; setup itself starts the launcher on the current Node', (t) => {

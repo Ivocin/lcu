@@ -332,12 +332,14 @@ export function configureAntigravity(home, command, node, release, { scope = 'us
 /** Install Grok's MCP server and lifecycle hooks together, through Grok's own local plugin installer. */
 export function configureGrok(home, command, node, release, { scope, env }) {
   if (scope !== 'user') throw new Error('The Grok plugin is user-scoped. Use --scope user.');
+  const root = env.GROK_HOME || join(home, '.grok');
+  if (!isAbsolute(root)) throw new Error('GROK_HOME must be absolute.');
   const executable = seams.which('grok', env.PATH) ?? seams.which('grok', join(home, '.grok/bin'));
   if (!executable) throw new Error('Install Grok CLI, then rerun `lcu setup --agent grok`.');
   const adapter = join(release, 'adapters/grok.mjs');
   if (!existsSync(adapter)) throw new Error(`LCU Grok relay missing: ${adapter}`);
   const name = 'lcu-computer-use';
-  const destination = join(env.GROK_HOME || join(home, '.grok'), 'lcu-plugin-source');
+  const destination = join(root, 'lcu-plugin-source');
   const grok = (...args) => checked('Grok plugin', executable, ['plugin', ...args], { cwd: home, env, timeout: 30_000 });
   const listing = JSON.parse(grok('list', '--json').stdout);
   const installed = listing.find(plugin => plugin.name === name);
