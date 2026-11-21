@@ -16,6 +16,7 @@ import {
   isMainModule,
   mergedToolDescriptor,
   nativeAppApprovalOptions,
+  nativeApprovalForm,
   nativeAppApprovalResponse,
 } from './client.mjs';
 import {
@@ -52,26 +53,6 @@ export function approvalHint(app, lcu = 'lcu') {
   return hookRelayApprovalHint(app, lcu, APPROVAL_REASON);
 }
 
-function nativeForm(params, approval) {
-  const choices = approval.choices;
-  return {
-    ...params,
-    mode: 'form',
-    message: approval.message,
-    requestedSchema: {
-      type: 'object',
-      properties: {
-        choice: {
-          type: 'string',
-          enum: choices.map(choice => choice.value),
-          enumNames: choices.map(choice => choice.label),
-        },
-      },
-      required: ['choice'],
-    },
-  };
-}
-
 /** Map Antigravity's Stop `terminationReason` to LCU's upstream turn-end event. */
 export function stopEventOf(terminationReason) {
   return terminationReason === undefined || terminationReason === '' || terminationReason === 'NO_TOOL_CALL'
@@ -97,7 +78,7 @@ export function runAntigravityRelay({ env = process.env, directory = controlDire
         if (approval) {
           if (clientCaps?.elicitation?.form) {
             try {
-              const answer = await server.elicitInput(nativeForm(params, approval), {
+              const answer = await server.elicitInput(nativeApprovalForm(params, approval), {
                 signal, timeout: APPROVAL_TIMEOUT_MS,
               });
               if (answer?.action === 'accept' && typeof answer.content?.choice === 'string') {

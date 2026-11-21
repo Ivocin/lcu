@@ -328,3 +328,35 @@ export function configureAntigravity(home, command, node, release, { scope = 'us
   applyChanges(changes);
   return { mcpPath, hooksPath };
 }
+
+/** Install Grok's MCP server and lifecycle hooks together, through Grok's own local plugin installer. */
+export function configureGrok(home, command, node, release, { scope, env }) {
+  if (scope !== 'user') throw new Error('The Grok plugin is user-scoped. Use --scope user.');
+  const executable = seams.which('grok', env.PATH) ?? seams.which('grok', join(home, '.grok/bin'));
+  if (!executable) throw new Error('Install Grok CLI, then rerun `lcu setup --agent grok`.');
+  const adapter = join(release, 'adapters/grok.mjs');
+  if (!existsSync(adapter)) throw new Error(`LCU Grok relay missing: ${adapter}`);
+  const name = 'lcu-computer-use';
+  const destination = join(env.GROK_HOME || join(home, '.grok'), 'lcu-plugin-source');
+  const grok = (...args) => checked('Grok plugin', executable, ['plugin', ...args], { cwd: home, env, timeout: 30_000 });
+  const listing = JSON.parse(grok('list', '--json').stdout);
+  const installed = listing.find(plugin => plugin.name === name);
+  if (installed && installed.source !== destination) throw new Error(`Another Grok plugin already uses the name ${name}.`);
+
+  // Grok copies a local plugin on install. The copied descriptors refer back to these stable launchers
+  // so rerunning setup can change release paths and runtime flags without an uninstall/reinstall gap.
+  const run = (...args) => `exec ${[node, adapter, ...args].map(shellQuote).join(' ')}\n`;
+  const server = { command: '/bin/sh', args: [join(destination, 'relay.sh')] };
+  const handler = { type: 'command', command: '/bin/sh', args: [join(destination, 'hook.sh')], timeout: 10 };
+  const hooks = Object.fromEntries(['UserPromptSubmit', 'Stop', 'StopCancelled', 'StopFailure', 'SessionEnd']
+    .map(event => [event, [{ hooks: [handler] }]]));
+  // Grok's backstop for turns that send no end report (a rewind, a superseded turn).
+  hooks.Notification = [{ matcher: 'idle_prompt', hooks: [handler] }];
+  withPackage(destination, 'grok', {
+    '.grok-plugin/plugin.json': json({ name, version: '0.1.0', description: 'Computer use through LCU.' }),
+    '.mcp.json': json({ mcpServers: { lcu: server } }),
+    'hooks/hooks.json': json({ hooks }),
+    'relay.sh': run(...command),
+    'hook.sh': run('--hook'),
+  }, pkg => installed ? grok('enable', name) : grok('install', pkg, '--trust'));
+}

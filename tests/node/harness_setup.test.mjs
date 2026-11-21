@@ -381,3 +381,42 @@ test('the Antigravity hook table agrees with the relay', () => {
   const events = /HOOK_EVENTS = \{([^}]*)\}/.exec(relay)[1].match(/(\w+):/g).map((key) => key.slice(0, -1));
   assert.deepEqual(events, Object.keys(ANTIGRAVITY_HOOKS));
 });
+
+test('Grok installs its local plugin once, refreshes its launch paths and protects a foreign registration', async t => {
+  const f = fixture(t, "Grok's test release");
+  write(join(f.release, 'adapters/grok.mjs'), '// relay');
+  const profile = join(f.home, 'Grok profile');
+  const source = join(profile, 'lcu-plugin-source');
+  const env = { GROK_HOME: profile };
+  let plugins = [];
+  let failEnable = false;
+  const run = (_command, args) => {
+    if (args[1] === 'list') return result(0, JSON.stringify(plugins));
+    if (args[1] === 'install') {
+      assert.deepEqual(args.slice(2), [source, '--trust']);
+      plugins = [{ name: 'lcu-computer-use', source }];
+    }
+    return result(args[1] === 'enable' && failEnable ? 1 : 0);
+  };
+
+  assert.deepEqual(await f.configure('grok', { env, run }), []);
+  const registered = files(source);
+  const server = JSON.parse(registered['.mcp.json']).mcpServers.lcu;
+  assert.deepEqual(server, { command: '/bin/sh', args: [join(source, 'relay.sh')] });
+  const { hooks } = JSON.parse(registered['hooks/hooks.json']);
+  assert.deepEqual(Object.keys(hooks).sort(),
+    ['Notification', 'SessionEnd', 'Stop', 'StopCancelled', 'StopFailure', 'UserPromptSubmit']);
+  assert.equal(hooks.Notification[0].matcher, 'idle_prompt');
+  assert.ok(registered['relay.sh'].includes('--audio --chrome'));
+  assert.deepEqual(await f.configure('grok', { env, run }), []);
+  assert.deepEqual(files(source), registered);
+  assert.equal(f.calls.filter(({ argv }) => argv[2] === 'install').length, 1);
+
+  failEnable = true;
+  f.command.pop();
+  assert.equal((await f.configure('grok', { env, run })).length, 1);
+  assert.deepEqual(files(source), registered);
+  plugins[0].source = join(f.home, 'someone-else');
+  assert.match((await f.configure('grok', { env, run }))[0][2], /Another Grok plugin/);
+  assert.deepEqual(files(source), registered);
+});

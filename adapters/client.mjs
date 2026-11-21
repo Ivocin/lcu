@@ -218,6 +218,27 @@ export function nativeAppApprovalOptions(params) {
   return { message: params.message, resource: app, choices };
 }
 
+/** Present only the choices offered by the original native-app elicitation as an MCP form. */
+export function nativeApprovalForm(params, approval) {
+  const choices = approval.choices;
+  return {
+    ...params,
+    mode: 'form',
+    message: approval.message,
+    requestedSchema: {
+      type: 'object',
+      properties: {
+        choice: {
+          type: 'string',
+          enum: choices.map(choice => choice.value),
+          enumNames: choices.map(choice => choice.label),
+        },
+      },
+      required: ['choice'],
+    },
+  };
+}
+
 /** Map a selected native-app approval choice to the original MCP response. */
 export function nativeAppApprovalResponse(params, value) {
   const request = nativeAppApprovalOptions(params);

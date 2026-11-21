@@ -72,6 +72,7 @@ export function approvalHint(app, lcu, reason) {
  * - `onHook(request)`: answers one parsed hook request; its result goes back to the hook;
  * - `onElicitation(params, extra)`: answers an elicitation of the original runtime;
  * - `sessionOf(callParams)`: the session a tool call belongs to, or undefined for the relay's fallback;
+ * - `turnIdOf()`: an active ID supplied by a host with numbered prompt hooks (optional);
  * - `describeTool(tool)`: the descriptor listed for an original public tool (optional).
  * `relay` holds `client`, `server` (once connected), `sessions`, `fallback` (the session id used before any hook
  * names one), and `stateOf`, `finish`, `noteApproval`.
@@ -129,18 +130,22 @@ export async function runHookRelay({
    * session's turn is retried too, so no call runs while an earlier turn's hooks may still hold the desktop.
    * Other sessions' open turns are left alone.
    */
-  async function turnOf(sessionId) {
+  async function turnOf(sessionId, hostTurnId) {
     const state = stateOf(sessionId);
     const unfinished = [...sessions].filter(([id, other]) => id !== sessionId && (other.pending || other.cleaning));
-    if (state.active && !unfinished.length) return state.active;
+    // The host has moved on to another numbered prompt, so the open turn's end report never arrived: interrupt it.
+    const current = state.active && (hostTurnId === undefined || state.active.turnId === hostTurnId);
+    if (current && !unfinished.length) return state.active;
     try {
       await Promise.all([...unfinished.map(([id]) => finish(id, 'Interrupt')),
-        ...(state.active ? [] : [finish(sessionId, 'Interrupt')])]);
+        ...(current ? [] : [finish(sessionId, 'Interrupt')])]);
     } catch (error) {
       throw new Error('LCU is still finishing the previous turn, so Computer Use actions are paused. ' +
         `Try again in a few seconds. ${asError(error)}`);
     }
-    state.active ??= { turnId: randomUUID(), calls: 0 };
+    // An ending hook can arrive while a pending cleanup is being retried.
+    if (hostTurnId !== undefined && harness.turnIdOf() !== hostTurnId) throw new Error('The host turn ended.');
+    state.active ??= { turnId: hostTurnId ?? randomUUID(), calls: 0 };
     return state.active;
   }
 
@@ -220,7 +225,7 @@ export async function runHookRelay({
       const { name: tool, arguments: args = {} } = request.params;
       if (!MODEL_TOOLS.has(tool)) return { isError: true, content: [{ type: 'text', text: `Unknown LCU tool: ${tool}` }] };
       const sessionId = harness.sessionOf(request.params) ?? relay.fallback;
-      const turn = await turnOf(sessionId);
+      const turn = await turnOf(sessionId, harness.turnIdOf?.());
       const approvals = new Set();
       turn.calls++;
       inFlight.add(approvals);
