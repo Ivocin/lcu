@@ -364,6 +364,19 @@ test('a webpack module import is treated as a module namespace for top-level sta
   assert.equal(f.runFactory(f.extract(webpackMembers(host))).probe, 'y.txt:package:3');
 });
 
+test('non-namespace webpack declarators keep their top-level initialisation calls', (t) => {
+  const chunk = '"use strict";exports.ids=[2],exports.modules={40:(e,t,r)=>{e.exports={a:r(41).a,createState:()=>new Map(),state:new Map()}},41(e){e.exports=require("dep-package")}};';
+  const body = 'return {pipePath:e,closeActiveTurn:async()=>false,dispose:async()=>{},probe:p.basename("x/y.txt")+d.a+state.get("ready")};';
+  for (const decl of ['const state=r(40).createState();', 'const {state}=r(40);']) {
+    const f = fixture(t);
+    const host = webpackHost(`var p=r(10),d=r(40);${decl}state.set("ready",true);`, body);
+    const members = webpackMembers(host, { [`${LOCATION}early-bootstrap-2-h.js`]: chunk });
+    const plan = f.plan(members);
+    assert.ok(plan.module.includes('state.set("ready",true);'), decl);
+    assert.equal(f.runFactory(f.extract(members)).probe, 'y.txt:package:true', decl);
+  }
+});
+
 test('the factory is found by its content under any bundle name', (t) => {
   const f = fixture(t);
   const members = { [`${LOCATION}preload.js`]: 'not parsed {{{', [`${LOCATION}anything-h.js`]: `function Zed(${OPTIONS}) { return {closeActiveTurn(){},nativePipeDirectory}; }` };
